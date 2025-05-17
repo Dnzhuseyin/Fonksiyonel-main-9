@@ -26,7 +26,11 @@ import com.example.fonksiyonel.R
 import com.example.fonksiyonel.model.CancerType
 import com.example.fonksiyonel.model.DiagnosisResult
 import com.example.fonksiyonel.model.RiskLevel
+import com.example.fonksiyonel.model.SkinCancerClassifier
 import java.util.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +43,17 @@ fun ScanScreen(
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
     var analysisResult by remember { mutableStateOf<DiagnosisResult?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Initialize the skin cancer classifier
+    val skinCancerClassifier = remember { SkinCancerClassifier(context) }
+    
+    // Clean up resources when the composable is disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            skinCancerClassifier.close()
+        }
+    }
     
     // Gallery launcher
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -49,19 +64,30 @@ fun ScanScreen(
         }
     }
     
-    // Function to analyze the image
+    // Function to analyze the image using the TensorFlow Lite model
     val analyzeImage = {
-        isAnalyzing = true
-        
-        // Simulate AI analysis (replace with actual TensorFlow Lite model inference)
-        // In a real app, this would be a call to your ML model
-        analysisResult = DiagnosisResult(
-            cancerType = CancerType.BENIGN,
-            confidencePercentage = 0.92f,
-            riskLevel = RiskLevel.LOW
-        )
-        
-        isAnalyzing = false
+        imageUri?.let { uri ->
+            isAnalyzing = true
+            
+            coroutineScope.launch {
+                try {
+                    // Use withContext to perform the model inference on IO dispatcher
+                    val result = withContext(Dispatchers.IO) {
+                        skinCancerClassifier.classifyImage(uri)
+                    }
+                    analysisResult = result
+                } catch (e: Exception) {
+                    // Handle any errors that might occur during classification
+                    e.printStackTrace()
+                    // Provide a fallback result or show an error message
+                } finally {
+                    isAnalyzing = false
+                }
+            }
+        } ?: run {
+            // No image selected
+            isAnalyzing = false
+        }
     }
 
     Scaffold(
